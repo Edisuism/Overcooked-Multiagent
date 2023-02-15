@@ -22,8 +22,7 @@ BEST_THRESHOLD = 0.5 # must achieve a mean score above this to replace prev best
 
 RENDER_MODE = False # set this to false if you plan on running for full 1000 trials.
 
-LOGDIR = "ppo1_selfplay"
-
+LOGDIR = "ppo2_selfplay"
 
 
 
@@ -35,7 +34,7 @@ class OvercookedEnv(gym.Env):
     self.game = main.Game()
     self.game.create_map()
     self.action_space = spaces.Discrete(6)
-    self.observation_space = spaces.Box(low=-500.0, high=500.0, shape=(4,), dtype=np.int64)
+    self.observation_space = spaces.Box(low=-500.0, high=500.0, shape=(8,), dtype=np.int64)
     self.agent = self.game.player[0]
     self.agentOther = self.game.player[1]
     #self.policy = BaselinePolicy()
@@ -46,9 +45,13 @@ class OvercookedEnv(gym.Env):
     self.game.events()
     self.game.update()
     self.game.draw()
-    self.observation = [self.game.player[0].x, self.game.player[0].y, self.game.player[1].x, self.game.player[1].y]
+    self.observation = [self.game.player[0].x, self.game.player[0].y, self.game.player[1].x, self.game.player[1].y, self.game.pot.x, self.game.pot.y, 
+                        self.game.counter.x, self.game.counter.y]
     self.observation = np.array(self.observation)
 
+    if otheraction is None:
+      otheraction = self.action_space.sample()
+      #otheraction = self.otherAction
     # if self.otherAction is not None:
     #   otherAction = self.otherAction
       
@@ -84,13 +87,17 @@ class OvercookedEnv(gym.Env):
       
 
     self.reward = self.game.score
+    if (self.game.is_cooking):
+      self.reward += 0.001
+
     info = {}
     return self.observation, self.reward, self.done, info
 
 
   def reset(self):
     self.game.restart()
-    self.observation= [self.game.player[0].x, self.game.player[0].y, self.game.player[1].x, self.game.player[1].y]
+    self.observation= [self.game.player[0].x, self.game.player[0].y, self.game.player[1].x, self.game.player[1].y, self.game.pot.x, self.game.pot.y,    
+                       self.game.counter.x, self.game.counter.y]
     self.observation = np.array(self.observation)
     return self.observation  # reward, done, info can't be included
 
