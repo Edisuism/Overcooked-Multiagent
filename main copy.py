@@ -2,15 +2,13 @@ import enum
 import pygame
 import sys
 from settings import *
-from sprites_r import *
+#from sprites_r import *
+from AI import *
 import os
 import csv
 from os import path
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-
-#TODO wrapper around game class?
-
 
 class Game:
     # ___Init___
@@ -35,7 +33,7 @@ class Game:
         self.player = []
         self.playing = True
         self.load_data('map.csv')
-        self.delta_time = 0
+        self.start_time = pygame.time.get_ticks()
 
         self.counter = None
         self.pot = None
@@ -53,7 +51,6 @@ class Game:
             reader = csv.reader(file)
             for line in reader:
                 self.map_data.append(line) 
-        print(self.map_data[0][3])
 
     def create_map(self):
         # enumerate gives us index and the item
@@ -62,7 +59,7 @@ class Game:
                 if tile == '0':
                     self.player.append(Player(self, col, row))
                 if tile == '1':
-                    Obstacle(self, col, row)
+                    Table(self, col, row)
                 if tile == '2':
                     PlateDispenser(self, col, row)
                 if tile == '3':
@@ -71,31 +68,30 @@ class Game:
                     self.counter = Counter(self, col, row)
                 if tile == '5':
                     FoodDispenser(self, col, row)
+                # if tile == '6':
+                #     AIPlayer(self, col, row)
+                grid_world = GridWorld(self.map_data)
 
 
-    # ___Update___
-
+# ___Update___
     def run(self):
         while self.playing:
-            self.delta_time = self.clock.tick(FPS) / 1000
             self.events()
+            # self.ai()
             self.update()
             self.draw()
     
     def events(self):
-        # catch all events here
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-        
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.quit()
                 if event.key == pygame.K_r:
                     self.restart()
-
-
+            
             if self.gameover:
                 break
 
@@ -106,15 +102,11 @@ class Game:
                     if self.cook_counter <= 0:
                         self.stop_cook()
 
-            if self.start_counter > 0:
-                break
-
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.quit()
                 if event.key == pygame.K_r:
                     self.restart()
-
                 if event.key == pygame.K_LEFT:
                     self.player[0].move(dx=-1)
                 if event.key == pygame.K_RIGHT:
@@ -126,19 +118,67 @@ class Game:
                 if event.key == pygame.K_RCTRL:
                     self.player[0].interact()
 
-                if self.player.count == 1:
-                    break
+                # if self.player.count == 1:
+                #     break
 
-                if event.key == pygame.K_a:
-                    self.player[1].move(dx=-1)
-                if event.key == pygame.K_d:
-                    self.player[1].move(dx=1)
-                if event.key == pygame.K_w:
-                    self.player[1].move(dy=-1)
-                if event.key == pygame.K_s:
-                    self.player[1].move(dy=1)
-                if event.key ==pygame.K_e:
-                    self.player[1].interact()
+                # if event.key == pygame.K_a:
+                #     self.player[1].move(dx=-1)
+                # if event.key == pygame.K_d:
+                #     self.player[1].move(dx=1)
+                # if event.key == pygame.K_w:
+                #     self.player[1].move(dy=-1)
+                # if event.key == pygame.K_s:
+                #     self.player[1].move(dy=1)
+                # if event.key ==pygame.K_e:
+                #     self.player[1].interact()
+
+    # def ai_update(self):
+    #     pathfinding_matrix = [
+    #     [0,0,0,0,0,0,0],
+    #     [0,1,1,1,1,1,0],
+    #     [0,1,1,1,1,1,0],
+    #     [0,1,1,1,1,1,0],
+    #     [0,0,0,0,0,0,0]]
+
+    #     pathfinding_grid = Grid(matrix= pathfinding_matrix)
+
+    #     self.type = 1 
+    #     self.matrix = matrix
+    #     self.grid = Grid(matrix = matrix)
+    #     self.target = []
+    #     self.path = []
+
+    #     if isinstance(self.player[1].held, Soup):
+    #         target = self.counter
+    #     elif self.pot.is_cooked:
+    #         target = self.pot
+    #     elif len(self.pot.objects) < 3:
+    #         pass #closest food dispenser
+
+
+
+    # def create_plan(self):
+    #     if (self.type == 1):
+    #         if (self.held == None):
+    #             for obstacle in self.game.obstacles:
+    #                 if (isinstance(obstacle, FoodDispenser)):
+    #                     self.create_path(obstacle.x, obstacle.y)
+    #         else:
+    #             for obstacle in self.game.obstacles:
+    #                 if (isinstance(obstacle, Obstacle)):
+    #                     if (obstacle.held == None):
+    #                         self.create_path(obstacle.x, obstacle.y)
+
+    # def create_path(self, target_x, target_y):
+    #     start_x, start_y = [self.x, self.y]
+    #     start = self.grid.node(start_x, start_y)
+    #     end_x = target_x
+    #     end_y = target_y
+    #     end = self.grid.node(end_x, end_y)
+    #     finder = AStarFinder()
+    #     self.path, = finder.find_path(start, end, self.grid)
+    #     self.grid.cleanup()
+
 
     def update(self):
         self.visible_sprites.update()
@@ -150,42 +190,39 @@ class Game:
         self.draw_UI()
         pygame.display.flip()
 
-
-    # ___Helper Functions___
-
-
     def draw_UI(self):
-        # score
-        self.text = self.font.render("Score: " + str(self.score), True, (255, 0, 0))
-        text_rect = self.text.get_rect(topright = self.screen.get_rect().topright)
-        self.screen.blit(self.text, text_rect)
-
-        # timer
-        if self.start_counter + self.game_length < self.game_length and self.start_counter + self.game_length > 0:
-            self.text = self.font.render("Time: " + str(self.start_counter + self.game_length), True, (255, 0, 0))
-            text_rect = self.text.get_rect(topleft = self.screen.get_rect().topleft)
-            self.screen.blit(self.text, text_rect)
-        elif self.start_counter + self.game_length > 0:
-            self.text = self.font.render("Time: " + str(self.game_length), True, (255, 0, 0))
-            text_rect = self.text.get_rect(topleft = self.screen.get_rect().topleft)
-            self.screen.blit(self.text, text_rect)
-        if self.start_counter + self.game_length <= 0:
-            self.text = self.font.render("Game Finished!", True, (255, 0, 0))
-            text_rect = self.text.get_rect(topleft = self.screen.get_rect().topleft)
-            self.screen.blit(self.text, text_rect)
-            self.gameover = True
-        
-        # countdown to start
-        if self.start_counter > 0:
-            self.text = self.font.render(str(self.start_counter), True, (255, 0, 0))
-            text_rect = self.text.get_rect(center = self.screen.get_rect().center)
+            # score
+            self.text = self.font.render("Score: " + str(self.score), True, (255, 0, 0))
+            text_rect = self.text.get_rect(topright = self.screen.get_rect().topright)
             self.screen.blit(self.text, text_rect)
 
-        # cooking timer (currently only supports 1 pot)
-        if self.is_cooking:
-            self.text = self.cook_font.render(str(self.cook_counter), True, (255, 0, 0))
-            text_rect = self.pot.rect
-            self.screen.blit(self.text, text_rect)
+            # timer
+            if self.start_counter + self.game_length < self.game_length and self.start_counter + self.game_length > 0:
+                self.text = self.font.render("Time: " + str(self.start_counter + self.game_length), True, (255, 0, 0))
+                text_rect = self.text.get_rect(topleft = self.screen.get_rect().topleft)
+                self.screen.blit(self.text, text_rect)
+            elif self.start_counter + self.game_length > 0:
+                self.text = self.font.render("Time: " + str(self.game_length), True, (255, 0, 0))
+                text_rect = self.text.get_rect(topleft = self.screen.get_rect().topleft)
+                self.screen.blit(self.text, text_rect)
+            if self.start_counter + self.game_length <= 0:
+                self.text = self.font.render("Game Finished!", True, (255, 0, 0))
+                text_rect = self.text.get_rect(topleft = self.screen.get_rect().topleft)
+                self.screen.blit(self.text, text_rect)
+                self.gameover = True
+            
+            # countdown to start
+            if self.start_counter > 0:
+                self.text = self.font.render(str(self.start_counter), True, (255, 0, 0))
+                text_rect = self.text.get_rect(center = self.screen.get_rect().center)
+                self.screen.blit(self.text, text_rect)
+
+            # cooking timer (currently only supports 1 pot)
+            if self.is_cooking:
+                self.text = self.cook_font.render(str(self.cook_counter), True, (255, 0, 0))
+                text_rect = self.pot.rect
+                self.screen.blit(self.text, text_rect)
+
 
     def draw_grid(self):
         # this is not necessary, just draws the grid lines
@@ -222,9 +259,8 @@ class Game:
         self.create_map()
 
 
-if __name__ == '__main__':
-    game = Game()
-    game.create_map()
-    while True:
-        # game.create_map()
-        game.run()
+game = Game()
+game.create_map()
+while True:
+    # game.create_map()
+    game.run()
