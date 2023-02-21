@@ -1,4 +1,5 @@
 from enum import Enum
+import random
 import pygame
 import sys
 import os
@@ -50,52 +51,134 @@ class GridWorld:
                 row.append(map_data[y][x])
             self.grid.append(row)
 
-
 # Behaviour Tree classes
-class Blackboard:
-    def __init__(self, map_data):
-        self.map_data = map_data
+class NodeState(Enum):
+    RUNNING = 1
+    SUCCESS = 2
+    FAILURE = 3
+
+
+class Tree():
+    def __init__(self):
+        self._root = None
+        self.Start()
+
+    def Start(self):
+        self._root = self.SetupTree()
+
+    def Update(self):
+        if self._root is not None:
+            self._root.evaluate()
+
+    def SetupTree(self):
+        pass
 
 class Node:
-    def __init__(self):
-        self.status = None
+    def __init__(self, children=None):
+        self.state = None
+        self.parent = None
+        self.children = []
+        if children is not None:
+            for child in children:
+                self._attach(child)
     
-    def run(self):
-        pass
+    def _attach(self, node):
+        node.parent = self
+        self.children.append(node)
 
-class Selector(Node):
-    def __init__(self, children):
-        super().__init__()
-        self.children = children
-    
-    def run(self):
-        for child in self.children:
-            child.run()
-            if child.status == "SUCCESS":
-                self.status = "SUCCESS"
-                return
-        self.status = "FAILURE"
+    def evaluate(self):
+        return NodeState.FAILURE
 
 class Sequence(Node):
-    def __init__(self, children):
-        super().__init__()
-        self.children = children
-    
-    def run(self):
-        for child in self.children:
-            child.run()
-            if child.status == "FAILURE":
-                self.status = "FAILURE"
-                return
-        self.status = "SUCCESS"
+    def __init__(self, children=None):
+        super().__init__(children)
 
-class Task(Node):
-    def run(self):
-        result = self.do_action()
-        self.status = "SUCCESS" if result else "FAILURE"
+    def evaluate(self):
+        any_child_is_running = False
+
+        for node in self.children:
+            node_state = node.evaluate()
+
+            if node_state == NodeState.FAILURE:
+                self.state = NodeState.FAILURE
+                return self.state
+            elif node_state == NodeState.SUCCESS:
+                continue
+            elif node_state == NodeState.RUNNING:
+                any_child_is_running = True
+                continue
+            else:
+                self.state = NodeState.SUCCESS
+                return self.state
+
+        self.state = NodeState.RUNNING if any_child_is_running else NodeState.SUCCESS
+        return self.state
+
+class Selector(Node):
+    def __init__(self, children=None):
+        super().__init__(children)
+
+    def evaluate(self):
+        for node in self.children:
+            node_state = node.evaluate()
+
+            if node_state == NodeState.FAILURE:
+                continue
+            elif node_state == NodeState.SUCCESS:
+                self.state = NodeState.SUCCESS
+                return self.state
+            elif node_state == NodeState.RUNNING:
+                self.state = NodeState.RUNNING
+                return self.state
+            else:
+                continue
+
+        self.state = NodeState.FAILURE
+        return self.state
     
-    def do_action(self):
-        pass
+# Specific BT classes
+class CooperativeBT(Tree):
+    def __init__(self):
+        super().__init__()
+
+    def SetupTree(self):
+        root = PrintRandom()
+        return root
+    
+class MoveToRandom(Node):
+    def evaluate(self):
+        return super().evaluate()
+    
+class PrintRandom(Node):
+    def evaluate(self):
+        num = random.randrange(1, 10)
+        print(num)
+        if num == 5:
+            return NodeState.SUCCESS
+
+class MoveToTarget(Node):
+    def evaluate(self):
+        target_x, target_y = self.game.find_closest_object(self.x, self.y, 4)
+        available_x, available_y = self.game.find_closest_object(target_x, target_y, 0) 
+        self.create_path(available_x, available_y)
+        
+    def create_path(self, target_x, target_y):
+        start_x, start_y = [self.x, self.y]
+        start = self.grid.node(start_x, start_y)
+        end_x = target_x
+        end_y = target_y
+        end = self.grid.node(end_x, end_y)
+        finder = AStarFinder()
+        self.path, = finder.find_path(start, end, self.grid)
+        self.grid.cleanup()
+    
+class InteractWith(Node):
+    def evaluate(self):
+        return super().evaluate()
+    
+class FindPath(Node):
+    def evaluate(self):
+        return super().evaluate()
 
 # Tile classes
 class Interactable(pygame.sprite.Sprite):
@@ -315,49 +398,164 @@ class Player(pygame.sprite.Sprite):
                 self.image = self.sprites[1]  
 
     # AI class
-class AIPlayer(Player):
+class AIPlayer(pygame.sprite.Sprite):
     def __init__(self, game, x, y):
-        super().__init__(self, game, x, y)
-    # prioritises points (1)
-    # if there is a cooked dish not held by other player, they will send it to the counter
-    # if there is a dish that is cooking, they will stand next to it
-    # if there is a pot that is not cooking, they will grab the nearest food and put it in the pot
+        groups = game.visible_sprites, game.obstacles
+        super().__init__(groups)
+        self.game = game
+        self.sprites = [pygame.image.load(os.path.dirname(__file__) + f"/Sprites/chef_{name}.png").convert_alpha()
+                        for name in ["front", "back", "side", "front_plate", "side_plate", "front_food", "side_food", "front_soup", "side_soup"]]
+        self.image = self.sprites[0] 
+        self.rect = self.image.get_rect()
+        self.x, self.y = x, y
+        self.past_x, self.past_y = x, y
+        self.orientation = 0
+        self.score = 0
+        self.held = None
+        self.logic = CooperativeBT()
 
-    # pure support (2)
-    # they will simply grab food and place it in the closest available position to the pot
-    # after 3 food, they will grab a plate and do the same before returning to positioning food
-    def create_plan(self):
-            if (self.type == 1):
-                if (self.held == Soup):
-                    target_x, target_y = self.game.find_closest_object(self.x, self.y, 4)
-                    available_x, available_y = self.game.find_closest_object(target_x, target_y, 0) 
-                    self.create_path(available_x, available_y)
-                elif (self.game.is_number_in_grid(13)):
-                    target_x, target_y = self.game.find_closest_object(self.x, self.y, 13) #this will try to path to the pot, but we need them to go to the open tile next to it
-                    available_x, available_y = self.game.find_closest_object(target_x, target_y, 0) #repeats the above to find closest open tile. This fails if there is no way to the tile
-                    self.create_path(available_x, available_y)
-                elif (self.game.is_number_in_grid(12)):
-                    target_x, target_y = self.game.find_closest_object(self.x, self.y, 12)
-                    available_x, available_y = self.game.find_closest_object(target_x, target_y, 0)
-                    self.create_path(available_x, available_y) 
-                    if (self.held == None):
-                        for obstacle in self.game.obstacles:
-                            if (isinstance(obstacle, FoodDispenser)):
-                                self.create_path(obstacle.x, obstacle.y)
-                else:
-                    for obstacle in self.game.obstacles:
-                        if (isinstance(obstacle, Table)):
-                            if (obstacle.held == None):
-                                self.create_path(obstacle.x, obstacle.y)
+    def add_score(self, amount):
+        self.score += amount
+        self.game.score += amount
 
-    def create_path(self, target_x, target_y):
-        start_x, start_y = [self.x, self.y]
-        start = self.grid.node(start_x, start_y)
-        end_x = target_x
-        end_y = target_y
-        end = self.grid.node(end_x, end_y)
-        finder = AStarFinder()
-        self.path, = finder.find_path(start, end, self.grid)
-        self.grid.cleanup()
+    def get_position(self):
+        return (self.x, self.y)
 
+    def move(self, dx=0, dy=0):
+        if dx == 1:
+            self.orientation = 6
+        if dx == -1:
+            self.orientation = 4   
+        if dy == 1:
+            self.orientation = 2
+        if dy == -1:
+            self.orientation = 8 
+        if not self.collide_with_obstacles(dx, dy):
+            self.past_x = self.x
+            self.past_y = self.y
+            self.x += dx
+            self.y += dy
+            
+    def ai_update(self):
+        self.logic.Update()
 
+    def interact(self):
+        dx, dy = {6: (1, 0), 4: (-1, 0), 2: (0, 1), 8: (0, -1)}[self.orientation]
+        self.use_interactable(dx, dy)
+
+    def collide_with_obstacles(self, dx=0, dy=0):
+         return any(obstacle.x == self.x + dx and obstacle.y == self.y + dy for obstacle in self.game.obstacles)
+
+    def use_interactable(self, dx=0, dy=0):
+        for interactable in self.game.interactables:
+            if interactable.x == self.x + dx and interactable.y == self.y + dy:
+                interactable.invoke(self)
+
+    def update(self):
+        self.rect.x = self.x * TILESIZE
+        self.rect.y = self.y * TILESIZE
+        if self.orientation == 6:
+            self.image = pygame.transform.flip(self.sprites[2], True, False)
+            if isinstance(self.held, Plate):
+                self.image = pygame.transform.flip(self.sprites[4], True, False)
+            if isinstance(self.held, Food):
+                self.image = pygame.transform.flip(self.sprites[6], True, False)
+            if isinstance(self.held, Soup):
+                self.image = pygame.transform.flip(self.sprites[8], True, False)
+        if self.orientation == 4: 
+            self.image = self.sprites[2]
+            if isinstance(self.held, Plate):
+                    self.image = self.sprites[4]       
+            if isinstance(self.held, Food):
+                    self.image = self.sprites[6]  
+            if isinstance(self.held, Soup):
+                self.image = self.sprites[8]  
+        if self.orientation == 2: 
+            self.image = self.sprites[0]
+            if isinstance(self.held, Plate):
+                self.image = self.sprites[3]  
+            if isinstance(self.held, Food):
+                self.image = self.sprites[5]
+            if isinstance(self.held, Soup):
+                self.image = self.sprites[7]
+        if self.orientation == 8: 
+            self.image = self.sprites[1] 
+    # def __init__(self, game, x, y):
+    #     super().__init__(self, game, x, y)
+    #     self.logic = CooperativeBT()
+
+    # # prioritises points (1)
+    # # if there is a cooked dish not held by other player, they will send it to the counter
+    # # if there is a dish that is cooking, they will stand next to it
+    # # if there is a pot that is not cooking, they will grab the nearest food and put it in the pot
+
+    # # pure support (2)
+    # # they will simply grab food and place it in the closest available position to the pot
+    # # after 3 food, they will grab a plate and do the same before returning to positioning food
+    # def create_plan(self):
+    #         if (self.type == 1):
+    #             if (self.held == Soup):
+    #                 target_x, target_y = self.game.find_closest_object(self.x, self.y, 4)
+    #                 available_x, available_y = self.game.find_closest_object(target_x, target_y, 0) 
+    #                 self.create_path(available_x, available_y)
+    #             elif (self.game.is_number_in_grid(13)):
+    #                 target_x, target_y = self.game.find_closest_object(self.x, self.y, 13) #this will try to path to the pot, but we need them to go to the open tile next to it
+    #                 available_x, available_y = self.game.find_closest_object(target_x, target_y, 0) #repeats the above to find closest open tile. This fails if there is no way to the tile
+    #                 self.create_path(available_x, available_y)
+    #             elif (self.game.is_number_in_grid(12)):
+    #                 target_x, target_y = self.game.find_closest_object(self.x, self.y, 12)
+    #                 available_x, available_y = self.game.find_closest_object(target_x, target_y, 0)
+    #                 self.create_path(available_x, available_y) 
+    #                 if (self.held == None):
+    #                     for obstacle in self.game.obstacles:
+    #                         if (isinstance(obstacle, FoodDispenser)):
+    #                             self.create_path(obstacle.x, obstacle.y)
+    #             else:
+    #                 for obstacle in self.game.obstacles:
+    #                     if (isinstance(obstacle, Table)):
+    #                         if (obstacle.held == None):
+    #                             self.create_path(obstacle.x, obstacle.y)
+
+    # def create_path(self, target_x, target_y):
+    #     start_x, start_y = [self.x, self.y]
+    #     start = self.grid.node(start_x, start_y)
+    #     end_x = target_x
+    #     end_y = target_y
+    #     end = self.grid.node(end_x, end_y)
+    #     finder = AStarFinder()
+    #     self.path, = finder.find_path(start, end, self.grid)
+    #     self.grid.cleanup()
+
+    # def ai_update(self):
+    #     self.logic.Update()
+
+    # def update(self):
+    #     self.logic.Update()
+    #     self.rect.x = self.x * TILESIZE
+    #     self.rect.y = self.y * TILESIZE
+    #     if self.orientation == 6:
+    #         self.image = pygame.transform.flip(self.sprites[2], True, False)
+    #         if isinstance(self.held, Plate):
+    #             self.image = pygame.transform.flip(self.sprites[4], True, False)
+    #         if isinstance(self.held, Food):
+    #             self.image = pygame.transform.flip(self.sprites[6], True, False)
+    #         if isinstance(self.held, Soup):
+    #             self.image = pygame.transform.flip(self.sprites[8], True, False)
+    #     if self.orientation == 4: 
+    #         self.image = self.sprites[2]
+    #         if isinstance(self.held, Plate):
+    #                 self.image = self.sprites[4]       
+    #         if isinstance(self.held, Food):
+    #                 self.image = self.sprites[6]  
+    #         if isinstance(self.held, Soup):
+    #             self.image = self.sprites[8]  
+    #     if self.orientation == 2: 
+    #         self.image = self.sprites[0]
+    #         if isinstance(self.held, Plate):
+    #             self.image = self.sprites[3]  
+    #         if isinstance(self.held, Food):
+    #             self.image = self.sprites[5]
+    #         if isinstance(self.held, Soup):
+    #             self.image = self.sprites[7]
+    #     if self.orientation == 8: 
+    #         self.image = self.sprites[1]  

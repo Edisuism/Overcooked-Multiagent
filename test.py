@@ -31,6 +31,7 @@ class Game:
         self.obstacles = pygame.sprite.Group()
         self.interactables = pygame.sprite.Group()
         self.player = []
+        self.AIplayer = None
         self.table = []
         self.pot = []
         self.playing = True
@@ -71,6 +72,8 @@ class Game:
                     (FoodDispenser(self, col_index, row_index))
                 elif tile == '6':
                     self.player.append(Player(self, col_index, row_index))
+                elif tile == '20':
+                    self.AIplayer = AIPlayer(self, col_index, row_index)
 
 # helper functions for grid
     def find_closest_object(self, x, y, targetObject):
@@ -85,7 +88,9 @@ class Game:
                     if distance < minDistance:
                         minDistance = distance
                         closestObject = self.grid[i][j]
-        return closestObject
+                        closestObject_x = i
+                        closestObject_y = j
+        return closestObject_x, closestObject_y
 
     def is_number_in_grid(self, number):
         for row in self.grid:
@@ -99,7 +104,7 @@ class Game:
             self.events()
             self.update()
             self.draw()
-            self.visualise_grid()
+            #self.visualise_grid()
     
     def events(self):
         for event in pygame.event.get():
@@ -122,11 +127,17 @@ class Game:
                     if self.cook_counter <= 0:
                         self.stop_cook()
 
+            self.AIplayer.ai_update()
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.quit()
                 if event.key == pygame.K_r:
                     self.restart()
+                if event.key == pygame.K_k:
+                    f_x, f_y = self.find_closest_object(3,3,4)
+                    print("X-coordinate: " + f_x)
+                    print("Y-coordinate: " + f_y)
                 if event.key == pygame.K_LEFT:
                     self.player[0].move(dx=-1)
                 if event.key == pygame.K_RIGHT:
@@ -137,7 +148,9 @@ class Game:
                     self.player[0].move(dy=1)
                 if event.key == pygame.K_RCTRL:
                     self.player[0].interact()
+
                 self.update_grid()
+                self.visualise_grid()
 
 
     def update_grid(self):
