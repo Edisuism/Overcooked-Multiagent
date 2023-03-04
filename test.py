@@ -1,15 +1,14 @@
-import enum
 import pygame
 import sys
 import math
+import copy
 from settings import *
 from AI import *
-#from sprites_r import *
-import os
 import csv
 from os import path
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
+
 
 class Game:
     # ___Init___
@@ -36,6 +35,8 @@ class Game:
         self.pot = []
         self.playing = True
         self.grid = []
+        self.AIgrid = []
+        self.pathfinding_matrix = None
         self.load_grid_from_csv('map copy.csv')
         self.start_time = pygame.time.get_ticks()
 
@@ -52,44 +53,71 @@ class Game:
         game_folder = path.dirname(__file__)
         with open(path.join(game_folder, FILENAME), 'r') as file:
             reader = csv.reader(file)
+            self.grid = []
             for line in reader:
-                self.grid.append(line) 
+                # Convert each value to an integer and append to grid
+                row = [int(value) for value in line]
+                self.grid.append(row) 
 
     def create_map(self):
         for row_index, row in enumerate(self.grid):
             for col_index, tile in enumerate(row):
                 if tile == 0:
                     pass
-                elif tile == '1':
+                elif tile == 1:
                     self.table.append(Table(self, col_index, row_index))
-                elif tile == '2':
+                elif tile == 2:
                     (PlateDispenser(self, col_index, row_index))
-                elif tile == '3':
+                elif tile == 3:
                     self.pot.append(Pot(self, col_index, row_index))
-                elif tile == '4':
+                elif tile == 4:
                     (Counter(self, col_index, row_index))
-                elif tile == '5':
+                elif tile == 5:
                     (FoodDispenser(self, col_index, row_index))
-                elif tile == '6':
+                elif tile == 6:
                     self.player.append(Player(self, col_index, row_index))
-                elif tile == '20':
+                elif tile == 20:
                     self.AIplayer = AIPlayer(self, col_index, row_index)
+
 
 # helper functions for grid
     def find_closest_object(self, x, y, targetObject):
-        m = len(self.grid)
-        n = len(self.grid[0])
+        # flip grid to better align with pathfinding matrix
+        flipped_grid = []
+        for j in range(len(self.grid[0])):
+            new_row = []
+            for i in range(len(self.grid)):
+                new_row.append(self.grid[i][j])
+            flipped_grid.append(new_row)
+        
+        m = len(flipped_grid)
+        n = len(flipped_grid[0])
         minDistance = math.inf
-        closestObject = None
         for i in range(m):
             for j in range(n):
-                if self.grid[i][j] == targetObject:
-                    distance = math.sqrt((x - i)**2 + (y - j)**2)
-                    if distance < minDistance:
-                        minDistance = distance
-                        closestObject = self.grid[i][j]
-                        closestObject_x = i
-                        closestObject_y = j
+                print(i, j)
+                if flipped_grid[i][j] == targetObject:
+                    if self.are_surrounding_tiles_free(i,j):
+                        k,l = self.are_surrounding_tiles_free(i,j)
+                        distance = math.sqrt((x - k)**2 + (y - l)**2)
+                        if distance < minDistance:
+                            minDistance = distance
+                            closestObject_x = k
+                            closestObject_y = l
+                            print("Found object at", k, l )
+        # m = len(self.grid)
+        # n = len(self.grid[0])
+        # minDistance = math.inf
+        # for i in range(m):
+        #     for j in range(n):
+        #         print(i, j)
+        #         if self.grid[i][j] == targetObject:
+        #             distance = math.sqrt((x - i)**2 + (y - j)**2)
+        #             if distance < minDistance:
+        #                 minDistance = distance
+        #                 closestObject_x = i
+        #                 closestObject_y = j
+        #                 print("Found object at", i, j )
         return closestObject_x, closestObject_y
 
     def is_number_in_grid(self, number):
@@ -97,6 +125,46 @@ class Game:
             if number in row:
                 return True
         return False
+    
+    def are_surrounding_tiles_free(self, x, y):
+        # rows, cols = len(self.grid), len(self.grid[0])
+        # for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+        #     r, c = row_index + dr, col_index + dc
+        #     if 0 <= r < rows and 0 <= c < cols and self.grid[r][c] == 1:
+        #         return True
+        # return False
+        print("tile:", x, y)
+
+        if self.grid[y][x] == 0:
+            return x, y
+        
+        for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+            if x+dx >= 0 and x+dx < len(self.grid[0]) and y+dy >= 0 and y+dy < len(self.grid):
+                if self.grid[y+dy][x+dx] == 0:
+                    return x+dx, y+dy
+
+    def pathtest(self , startx, starty, targetx, targety):
+        # create copy of grid for AI purpose
+        self.AIgrid = copy.deepcopy(self.grid)
+        for row in range(len(self.AIgrid)):
+            for col in range(len(self.AIgrid[row])):
+                cell_value = self.AIgrid[row][col]
+                if (cell_value > 0):
+                    self.AIgrid[row][col] = cell_value * -1
+                if (cell_value == 0):
+                    self.AIgrid[row][col] = 1
+        self.visualise_grid(self.AIgrid)
+        self.pathfinding_matrix = Grid(matrix=self.AIgrid)
+        start = self.pathfinding_matrix.node(startx, starty)
+        end = self.pathfinding_matrix.node(targetx, targety)
+        finder = AStarFinder(diagonal_movement=False)
+        path, runs = finder.find_path(start, end, self.pathfinding_matrix)
+        self.pathfinding_matrix.cleanup()
+        print('Path:', path)
+        #print('Runs:', runs)
+
+        return path
+
 
 # ___Update___
     def run(self):
@@ -135,9 +203,10 @@ class Game:
                 if event.key == pygame.K_r:
                     self.restart()
                 if event.key == pygame.K_k:
-                    f_x, f_y = self.find_closest_object(3,3,4)
-                    print("X-coordinate: " + f_x)
-                    print("Y-coordinate: " + f_y)
+                    self.pathtest(1,1,5,1)
+                    # f_x, f_y = self.find_closest_object(3,3,4)
+                    # print("X-coordinate: " + f_x)
+                    # print("Y-coordinate: " + f_y)
                 if event.key == pygame.K_LEFT:
                     self.player[0].move(dx=-1)
                 if event.key == pygame.K_RIGHT:
@@ -150,14 +219,14 @@ class Game:
                     self.player[0].interact()
 
                 self.update_grid()
-                self.visualise_grid()
+                self.visualise_grid(self.grid)
 
 
     def update_grid(self):
         for player in self.player:
             #invert x and y to fit with gridworld
-            self.grid[player.past_y][player.past_x] = '0'
-            self.grid[player.y][player.x] = '6'
+            self.grid[player.past_y][player.past_x] = 0
+            self.grid[player.y][player.x] = 6
 
         for table in self.table:
             self.grid[table.y][table.x] = table.id
@@ -165,8 +234,27 @@ class Game:
         for pot in self.pot:
             self.grid[pot.y][pot.x] = pot.id
 
-    def visualise_grid(self):
-        print(*self.grid, sep='\n')
+    def visualise_grid(self , grid):
+        #print(*self.grid, sep='\n')# Define the labels for the rows and columns
+        # print("{:<6}".format(""), end="")
+        # for col in range(len(grid[0])):
+        #     print("{:<6}".format(f"Col {col}"), end="")
+        # print()
+        # for row in range(len(grid)):
+        #     print("{:<6}".format(f"Row {row}"), end="")
+        #     for col in range(len(grid[row])):
+        #         print("{:<6}".format(str(grid[row][col])), end="")
+        #     print()
+        print("{:<5}".format(""), end="|")
+        for col in range(len(grid[0])):
+            print("{:^5}".format(f"Col {col}"), end="|")
+        print("\n" + "-"*len("{:<5}".format("")) + "-"*(6*len(grid[0])+1))
+        for row in range(len(grid)):
+            print("{:<5}".format(f"Row {row}"), end="|")
+            for col in range(len(grid[row])):
+                print("{:^5}".format(str(grid[row][col])), end="|")
+            print("\n" + "-"*len("{:<5}".format("")) + "-"*(6*len(grid[row])+1))
+
 
     def update(self):
         self.visible_sprites.update()
