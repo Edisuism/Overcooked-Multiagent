@@ -81,8 +81,33 @@ class Game:
 
 
 # helper functions for grid
-    def find_closest_object(self, x, y, targetObject):
+    def find_surrounding(self, x, y, targetObject):
         # flip grid to better align with pathfinding matrix
+        flipped_grid = []
+        for j in range(len(self.grid[0])):
+            new_row = []
+            for i in range(len(self.grid)):
+                new_row.append(self.grid[i][j])
+            flipped_grid.append(new_row)
+
+        m = len(flipped_grid)
+        n = len(flipped_grid[0])
+        minDistance = math.inf
+        for i in range(m):
+            for j in range(n):
+                #print(i, j)
+                if flipped_grid[i][j] == targetObject:
+                    distance = math.sqrt((x - i)**2 + (y - j)**2)
+                    if distance < minDistance:
+                        minDistance = distance
+                        closestObject_x = i
+                        closestObject_y = j
+                        #print("Found object at", i, j )
+        return closestObject_x, closestObject_y
+
+
+    def find_closest_objects(self, x, y, targetObject):
+        print("TargetObject", targetObject)
         flipped_grid = []
         for j in range(len(self.grid[0])):
             new_row = []
@@ -93,9 +118,68 @@ class Game:
         m = len(flipped_grid)
         n = len(flipped_grid[0])
         minDistance = math.inf
+
+        if (targetObject == 3 or targetObject == 10 or targetObject == 11 or targetObject == 12):
+            target_objects = [3, 10, 11, 12]
+
+            for i in range(m):
+                for j in range(n):
+                    if flipped_grid[i][j] in target_objects:
+                        print("FOUND TARGET")
+                        distance = math.sqrt((x - i)**2 + (y - j)**2)
+                        if distance < minDistance:
+                            minDistance = distance
+                            closestObject_x = i
+                            closestObject_y = j
+            return closestObject_x, closestObject_y
+
         for i in range(m):
             for j in range(n):
-                print(i, j)
+                if flipped_grid[i][j] == targetObject:
+                    print("FOUND TARGET")
+                    distance = math.sqrt((x - i)**2 + (y - j)**2)
+                    if distance < minDistance:
+                        minDistance = distance
+                        closestObject_x = i
+                        closestObject_y = j
+        return closestObject_x, closestObject_y
+
+    def find_closest_object(self, x, y, targetObject):
+        # flip grid to better align with pathfinding matrix
+        print("TargetObject", targetObject)
+        flipped_grid = []
+        for j in range(len(self.grid[0])):
+            new_row = []
+            for i in range(len(self.grid)):
+                new_row.append(self.grid[i][j])
+            flipped_grid.append(new_row)
+        
+        m = len(flipped_grid)
+        n = len(flipped_grid[0])
+        minDistance = math.inf
+
+        if (targetObject == 3 or targetObject == 10 or targetObject == 11 or targetObject == 12):
+            print("TRUE")
+            print("MINDIST", minDistance)
+            target_objects = [3, 10, 11, 12]
+
+            for i in range(m):
+                for j in range(n):
+                    #print(i, j)
+                    if flipped_grid[i][j] in target_objects:
+                        print("FOUND")
+                        if self.are_surrounding_tiles_free(i,j):
+                            k,l = self.are_surrounding_tiles_free(i,j)
+                            distance = math.sqrt((x - k)**2 + (y - l)**2)
+                            if distance < minDistance:
+                                minDistance = distance
+                                closestObject_x = k
+                                closestObject_y = l
+            return closestObject_x, closestObject_y
+
+        for i in range(m):
+            for j in range(n):
+                #print(i, j)
                 if flipped_grid[i][j] == targetObject:
                     if self.are_surrounding_tiles_free(i,j):
                         k,l = self.are_surrounding_tiles_free(i,j)
@@ -104,7 +188,8 @@ class Game:
                             minDistance = distance
                             closestObject_x = k
                             closestObject_y = l
-                            print("Found object at", k, l )
+                            #print("Found object at", k, l )
+        return closestObject_x, closestObject_y
         # m = len(self.grid)
         # n = len(self.grid[0])
         # minDistance = math.inf
@@ -118,7 +203,7 @@ class Game:
         #                 closestObject_x = i
         #                 closestObject_y = j
         #                 print("Found object at", i, j )
-        return closestObject_x, closestObject_y
+        #return closestObject_x, closestObject_y
 
     def is_number_in_grid(self, number):
         for row in self.grid:
@@ -127,21 +212,22 @@ class Game:
         return False
     
     def are_surrounding_tiles_free(self, x, y):
-        # rows, cols = len(self.grid), len(self.grid[0])
-        # for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-        #     r, c = row_index + dr, col_index + dc
-        #     if 0 <= r < rows and 0 <= c < cols and self.grid[r][c] == 1:
-        #         return True
-        # return False
-        print("tile:", x, y)
-
+        # if self.grid[x][y] == 0:
+        #     return x, y
+        
+        # for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+        #     if x+dx >= 0 and x+dx < len(self.grid) and y+dy >= 0 and y+dy < len(self.grid[0]):
+        #         if self.grid[x+dx][y+dy] == 0:
+        #             return x+dx, y+dy
         if self.grid[y][x] == 0:
             return x, y
         
         for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
             if x+dx >= 0 and x+dx < len(self.grid[0]) and y+dy >= 0 and y+dy < len(self.grid):
                 if self.grid[y+dy][x+dx] == 0:
+                    print("SURROUNDING", x+dx, y+dy)
                     return x+dx, y+dy
+        print("NO SURROUNDING")
 
     def pathtest(self , startx, starty, targetx, targety):
         # create copy of grid for AI purpose
@@ -153,8 +239,11 @@ class Game:
                     self.AIgrid[row][col] = cell_value * -1
                 if (cell_value == 0):
                     self.AIgrid[row][col] = 1
-        self.visualise_grid(self.AIgrid)
+        self.visualise_grid(self.grid)
+        self.visualise_grid(self.AIgrid) ##
         self.pathfinding_matrix = Grid(matrix=self.AIgrid)
+        print("Pathfinding")
+        print(self.pathfinding_matrix.grid_str())
         start = self.pathfinding_matrix.node(startx, starty)
         end = self.pathfinding_matrix.node(targetx, targety)
         finder = AStarFinder(diagonal_movement=False)
@@ -162,6 +251,7 @@ class Game:
         self.pathfinding_matrix.cleanup()
         print('Path:', path)
         #print('Runs:', runs)
+        #self.visualise_grid(self.pathfinding_matrix)
 
         return path
 
@@ -227,6 +317,9 @@ class Game:
             #invert x and y to fit with gridworld
             self.grid[player.past_y][player.past_x] = 0
             self.grid[player.y][player.x] = 6
+
+        self.grid[self.AIplayer.past_y][self.AIplayer.past_x] = 0
+        self.grid[self.AIplayer.y][self.AIplayer.x] = 20
 
         for table in self.table:
             self.grid[table.y][table.x] = table.id

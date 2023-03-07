@@ -113,8 +113,6 @@ class Sequence(Node):
         self.children.append(node)
 
     def evaluate(self, blackboard):
-        any_child_is_running = False
-
         for node in self.children:
             node_state = node.evaluate(blackboard)
 
@@ -122,16 +120,17 @@ class Sequence(Node):
                 self.state = NodeState.FAILURE
                 return self.state
             elif node_state == NodeState.SUCCESS:
-                continue
+                if node == self.children[-1]:
+                    self.state = NodeState.SUCCESS
+                    return self.state
+                else:
+                    continue
             elif node_state == NodeState.RUNNING:
-                any_child_is_running = True
-                continue
-            else:
-                self.state = NodeState.SUCCESS
+                self.state = NodeState.RUNNING
                 return self.state
-
-        self.state = NodeState.RUNNING if any_child_is_running else NodeState.SUCCESS
+        self.state = NodeState.SUCCESS
         return self.state
+
 
 class Selector(Node):
     def __init__(self, children=None):
@@ -169,12 +168,20 @@ class CooperativeBT(Tree):
         super().__init__(blackboard)
 
     def SetupTree(self):
-        root = Selector([
+        root = Sequence([
             Sequence([
                 FindPot(5),
                 FindPath(),
                 MoveOnPath(),
+                InteractWith(),
             ]),
+            Sequence([
+                FindPot(3),
+                FindPath(),
+                MoveOnPath(),
+                InteractWith(),
+            ]),
+            
         ])
         return root
     
@@ -190,6 +197,7 @@ class MoveOnPath(Node):
         ai_player = blackboard.get("Self")
         
         if self.current_index >= len(self.path):
+            blackboard.clear_data("Path")
             return NodeState.SUCCESS
 
         current_position = ai_player.get_position()
@@ -202,7 +210,9 @@ class MoveOnPath(Node):
             print("FAIL")
             return NodeState.FAILURE
 
-        self.current_index += 1
+        self.current_index += 1 
+        game = blackboard.get("Game")
+        game.update_grid()
 
         print(current_position)
         if self.current_index < len(self.path):
@@ -212,6 +222,7 @@ class FindPath(Node):
     def __init__(self):
         super().__init__()
         self.path = None
+        print("FIND PATH")
 
     def evaluate(self, blackboard):
         if self.path is None:
@@ -228,22 +239,43 @@ class FindPot(Node):
     def __init__(self, object):
         super().__init__()
         self.object = object
+        print("FIND POT")
 
     def evaluate(self, blackboard):
+        print("FINDING", self.object)
         game = blackboard.get("Game")
         ai_player = blackboard.get("Self")
         target_x, target_y  = game.find_closest_object(ai_player.x, ai_player.y, self.object)
         #available_x, available_y = game.find_closest_free_tile(target_x, target_y) 
         available_x, available_y = game.find_closest_object(target_x, target_y, 0) 
+        #available_x, available_y  = game.find_closest_object(ai_player.x, ai_player.y, 0)
         blackboard.set("TargetX", available_x)
         blackboard.set("TargetY", available_y)
         # blackboard.set("TargetX", target_x)
         # blackboard.set("TargetY", target_y)
+        blackboard.set("Goal Object", self.object)
         return NodeState.SUCCESS
 
 class InteractWith(Node):
-    def evaluate(self):
-        return super().evaluate()
+    def __init__(self):
+        super().__init__()
+        print("INTERACT WITH")
+
+    def evaluate(self, blackboard):
+        game = blackboard.get("Game")
+        ai_player = blackboard.get("Self")
+        goal_object = blackboard.get("Goal Object")
+        print("GOAL", goal_object)
+        target_x, target_y  = game.find_surrounding(ai_player.x, ai_player.y, goal_object)
+        direction_x = target_x - ai_player.x
+        direction_y = target_y - ai_player.y
+        ai_player.move(direction_x, direction_y)
+        ai_player.interact()
+        blackboard.clear_data("Goal Object")
+        return NodeState.SUCCESS
+
+
+
     
 # Tile classes
 class Interactable(pygame.sprite.Sprite):
