@@ -1,204 +1,126 @@
 import gym
-import pygame
-import main
 from gym import spaces
-import sys
-from settings import *
-from sprites_r import *
-import os
-from os import path
 import numpy as np
-from stable_baselines3 import PPO
-from stable_baselines3.common.logger import configure
-from stable_baselines3.common.callbacks import EvalCallback
-
-from shutil import copyfile # keep track of generations
-
-# Settings
-NUM_TIMESTEPS = int(1e9)
-EVAL_FREQ = int(1e5)
-EVAL_EPISODES = int(1e2)
-BEST_THRESHOLD = 0.5 # must achieve a mean score above this to replace prev best self
-
-RENDER_MODE = False # set this to false if you plan on running for full 1000 trials.
-
-LOGDIR = "ppo2_selfplay"
-
-
+import random
 
 class OvercookedEnv(gym.Env):
-  metadata = {'render.modes': ['human']}
+    metadata = {'render.modes': ['human']}
 
-  def __init__(self):
-    super(OvercookedEnv, self).__init__()
-    self.game = main.Game()
-    self.game.create_map()
-    self.action_space = spaces.Discrete(6)
-    self.observation_space = spaces.Box(low=-500.0, high=500.0, shape=(8,), dtype=np.int64)
-    self.agent = self.game.player[0]
-    self.agentOther = self.game.player[1]
-    #self.policy = BaselinePolicy()
+    def __init__(self, layout, start_positions, cook_time, max_steps):
+        super(OvercookedEnv, self).__init__()
+        self.layout = layout
+        self.start_positions = start_positions
+        self.cook_time = cook_time
+        self.max_steps = max_steps
+        self.players = [(0,0), (1,0)]
+        self.ingredients = [(2,2), (2,3)]
+        self.dishes = []
+        self.steps = 0
+        self.score = 0
+        
+        # Define action and observation spaces
+        self.action_space = spaces.Discrete(4)
+        self.observation_space = spaces.Dict({
+            'players': spaces.Box(low=np.zeros((2, 2)), high=np.ones((2, 2)), dtype=np.float64),
+            'ingredients': spaces.Box(low=np.zeros((2, 2)), high=np.ones((2, 2)), dtype=np.float64),
+            'dishes': spaces.Box(low=np.zeros((2, 2)), high=np.ones((2, 2)), dtype=np.float64),
+            'score': spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64),
+        })
+
+    def reset(self):
+        self.players = self.start_positions
+        self.ingredients = [(2,2), (2,3)]
+        self.dishes = []
+        self.steps = 0
+        self.score = 0
+        return self._get_obs()
+
+    def step(self, action):
+        self.steps += 1
+        done = False
+        
+        # Move players
+        self._move_player(0, action[0])
+        self._move_player(1, action[1])
+        
+        # Serve dishes if both players are at the correct location
+        if (len(self.dishes) == 2 and self.players[0] == self.dishes[0] and self.players[1] == self.dishes[1]):
+            self.score += 10
+            self.dishes = []
+        
+        # Cook dishes if there are enough ingredients
+        for i in range(len(self.ingredients)):
+            if (self.ingredients[i] == self.players[i]):
+                self.ingredients[i] = None
+                self.dishes.append(self.players[i])
+                break
+        
+        # Penalize players for taking too long
+        if (self.steps >= self.max_steps):
+            self.score -= 1
+            done = True
+        
+        # Update observation and score
+        obs = self._get_obs()
+        reward = self.score - obs['score']
+        self.score = obs['score']
+        
+        return obs, reward, done, {}
+
+    def render(self, mode='human'):
+        for row in self.layout:
+            for col in row:
+                if (col == "#"):
+                    print("#", end=" ")
+                elif (col == "P1"):
+                    print("P1", end=" ")
+                elif (col == "P2"):
+                    print("P2", end=" ")
+                elif (col == "I"):
+                    print("I", end=" ")
+                elif (col == "D"):
+                    print("D", end=" ")
+                else:
+                    print(" ", end=" ")
+            print()
+        print("Score: {}".format(self.score))
+        
+    def _move_player(self, player_num, direction):
+        if (player_num < 1 or player_num > 2):
+            raise ValueError("Invalid player number")
+            # Determine new position
+            new_pos = list(self.players[player_num-1])
+            if (direction == 0):  # Up
+                new_pos[0] -= 1
+            elif (direction == 1):  # Down
+                new_pos[0] += 1
+            elif (direction == 2):  # Left
+                new_pos[1] -= 1
+            elif (direction == 3):  # Right
+                new_pos[1] += 1
+            else:
+                raise ValueError("Invalid direction")
+            
+            # Check if new position is valid
+            if (new_pos[0] < 0 or new_pos[0] >= len(self.layout) or new_pos[1] < 0 or new_pos[1] >= len(self.layout[0])):
+                return
+            if (self.layout[new_pos[0]][new_pos[1]] == "#"):
+                return
+            
+            # Update position
+            self.players[player_num-1] = tuple(new_pos)
     
-
-  def step(self, action, otheraction=None):
-    self.done = self.game.gameover
-    self.game.events()
-    self.game.update()
-    self.game.draw()
-    self.observation = [self.game.player[0].x, self.game.player[0].y, self.game.player[1].x, self.game.player[1].y, self.game.pot.x, self.game.pot.y, 
-                        self.game.counter.x, self.game.counter.y]
-    self.observation = np.array(self.observation)
-
-    if otheraction is None:
-      otheraction = self.action_space.sample()
-      #otheraction = self.otherAction
-    # if self.otherAction is not None:
-    #   otherAction = self.otherAction
-      
-    # if otherAction is None: # override baseline policy
-    #   obs = self.game.player[0].getObservation()
-    #   otherAction = self.policy.predict(obs)
-
-    # self.game.player[0].setAction(otherAction)
-    # self.game.player[1].setAction(action) 
-
-    # action 0 is doing nothing 
-    if action == 1:
-        self.game.player[0].move(dx=-1)
-    if action == 2:
-        self.game.player[0].move(dx=1)
-    if action == 3:
-        self.game.player[0].move(dy=-1)
-    if action == 4:
-        self.game.player[0].move(dy=1)
-    if action == 5:
-        self.game.player[0].interact()
-    # action 0 is doing nothing 
-    if otheraction == 1:
-        self.game.player[1].move(dx=-1)
-    if otheraction == 2:
-        self.game.player[1].move(dx=1)
-    if otheraction == 3:
-        self.game.player[1].move(dy=-1)
-    if otheraction == 4:
-        self.game.player[1].move(dy=1)
-    if otheraction == 5:
-        self.game.player[1].interact()
-      
-
-    self.reward = self.game.score
-    if (self.game.is_cooking):
-      self.reward += 0.001
-
-    info = {}
-    return self.observation, self.reward, self.done, info
-
-
-  def reset(self):
-    self.game.restart()
-    self.observation= [self.game.player[0].x, self.game.player[0].y, self.game.player[1].x, self.game.player[1].y, self.game.pot.x, self.game.pot.y,    
-                       self.game.counter.x, self.game.counter.y]
-    self.observation = np.array(self.observation)
-    return self.observation  # reward, done, info can't be included
-
-
-#   def render(self, mode='human'):
-#     ...
-#   def close (self):
-#     ...
-
-
-class OvercookedSelfPlayEnv(OvercookedEnv):
- # wrapper over the normal single player env, but loads the best self play model
-  def __init__(self):
-    super(OvercookedSelfPlayEnv, self).__init__()
-    self.policy = self
-    self.best_model = None
-    self.best_model_filename = None
-  def predict(self, obs): # the policy
-    if self.best_model is None:
-      return self.action_space.sample() # return a random action
-    else:
-      action, _ = self.best_model.predict(obs)
-      return action
-  def reset(self):
-    # load model if it's there
-    modellist = [f for f in os.listdir(LOGDIR) if f.startswith("history")]
-    modellist.sort()
-    if len(modellist) > 0:
-      filename = os.path.join(LOGDIR, modellist[-1]) # the latest best model
-      if filename != self.best_model_filename:
-        print("loading model: ", filename)
-        self.best_model_filename = filename
-        if self.best_model is not None:
-          del self.best_model
-        self.best_model = PPO.load(filename, env=self)
-    return super(OvercookedSelfPlayEnv, self).reset()
-
-class SelfPlayCallback(EvalCallback):
-  # hacked it to only save new version of best model if beats prev self by BEST_THRESHOLD score
-  # after saving model, resets the best score to be BEST_THRESHOLD
-    def __init__(self, *args, **kwargs):
-        super(SelfPlayCallback, self).__init__(*args, **kwargs)
-        self.best_mean_reward = BEST_THRESHOLD
-        self.generation = 0
-
-    def _on_step(self) -> bool:
-        result = super(SelfPlayCallback, self)._on_step()
-        if result and self.best_mean_reward > BEST_THRESHOLD:
-            self.generation += 1
-            print("SELFPLAY: mean_reward achieved:", self.best_mean_reward)
-            print("SELFPLAY: new best model, bumping up generation to", self.generation)
-            source_file = os.path.join(LOGDIR, "best_model.zip")
-            backup_file = os.path.join(LOGDIR, "history_"+str(self.generation).zfill(8)+".zip")
-            copyfile(source_file, backup_file)
-            self.best_mean_reward = BEST_THRESHOLD
-        return result
-    
-def rollout(env, policy):
-    """ play one agent vs the other in modified gym-style loop. """
-    obs = env.reset()
-
-    done = False
-    total_reward = 0
-
-    while not done:
-
-        action, _states = policy.predict(obs)
-        obs, reward, done, _ = env.step(action)
-
-        total_reward += reward
-
-        if RENDER_MODE:
-            env.render()
-
-    return total_reward
-
-def train():
-    # train selfplay agent
-    customlogger = configure(folder=LOGDIR)
-
-    env = OvercookedSelfPlayEnv()
-
-    # take mujoco hyperparams (but doubled timesteps_per_actorbatch to cover more steps.)
-    model = PPO("MlpPolicy", env, n_steps=4096, clip_range=0.2, ent_coef=0.0, n_epochs=10,
-                    batch_size=64, gamma=0.99, gae_lambda=0.95, verbose=2)
-    
-    model.set_logger(customlogger)
-
-    eval_callback = SelfPlayCallback(env,
-        best_model_save_path=LOGDIR,
-        log_path=LOGDIR,
-        eval_freq=EVAL_FREQ,
-        n_eval_episodes=EVAL_EPISODES,
-        deterministic=False)
-
-    model.learn(total_timesteps=NUM_TIMESTEPS, callback=eval_callback)
-
-    model.save(os.path.join(LOGDIR, "final_model")) # probably never get to this point.
-
-    env.close()
-
-
-train()
-
+    def _get_obs(self):
+        obs = {
+            'players': np.zeros(4),
+            'ingredients': np.zeros((2,2)),
+            'dishes': np.zeros((2,2)),
+            'score': np.array([self.score]),
+        }
+        for i in range(2):
+            obs['players'][i*2:(i+1)*2] = np.array(self.players[i])
+            if (self.ingredients[i] is not None):
+                obs['ingredients'][i] = np.array(self.ingredients[i])
+            if (len(self.dishes) > i):
+                obs['dishes'][i] = np.array(self.dishes[i])
+        return obs
