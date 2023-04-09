@@ -43,4 +43,4 @@ object_data = {
 }
 # fixed timestep in milliseconds
 TIME_STEP = 50  
-cooking_time = 50
+
