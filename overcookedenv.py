@@ -152,7 +152,11 @@ class GameSelfPlay:
 
         done = self.gameover
 
-        info = {}
+        info = {"agentOne_archetype": self.agentOne.archetype.get_archetype(),
+                "agentTwo_archetype": self.agentTwo.archetype.get_archetype()
+        }
+
+        #self.write_to_csv()
 
         return observation, reward, done, info
 
@@ -197,6 +201,28 @@ class GameSelfPlay:
                 row = [int(value) for value in line]
                 self.grid.append(row) 
         self.grid_save = copy.deepcopy(self.grid)
+
+# self.num_of_objects_placed = 0
+# self.num_of_objects_boiled = 0
+# self.num_of_soup_delivered = 0
+# self.num_of_soup_plated = 0
+# self.distance_moved = 0
+    def write_to_csv(self):
+        with open('archetype.csv', mode='a', newline='') as file:
+            writer = csv.writer(file)
+
+            randomNumber = random.randint(1, 20)
+
+            if randomNumber < 3:
+                writer.writerow([random.randint(13, 20),random.randint(1, 5),random.randint(0, 1),random.randint(0, 1),random.randint(50, 80)])
+            elif randomNumber < 10:
+                writer.writerow([random.randint(1, 2),random.randint(8, 14),random.randint(0, 3),random.randint(0, 3),random.randint(50, 80)])
+            elif randomNumber < 16:
+                writer.writerow([random.randint(0, 2),random.randint(10, 19),random.randint(0, 3),random.randint(0, 3),random.randint(50, 100)])
+            elif randomNumber < 21:
+                writer.writerow([random.randint(5, 10),random.randint(5, 10),random.randint(0, 2),random.randint(0, 2),random.randint(100, 200)])
+            #writer.writerow(info["agentOne_archetype"])
+            #writer.writerow(info["agentTwo_archetype"])
 
     def create_map(self):
         for row_index, row in enumerate(self.grid):
@@ -398,6 +424,7 @@ class Player(pygame.sprite.Sprite):
         self.identity = None
         self.set_identity()
         self.name = None
+        self.archetype = Archetype()
         self.action_table = [[0,0,0,0,0], #NOTHING
                             [1,0,0,0,0], #UP
                             [0,1,0,0,0], #DOWN
@@ -437,6 +464,7 @@ class Player(pygame.sprite.Sprite):
             self.past_y = self.y
             self.x += dx
             self.y += dy
+            self.archetype.distance_moved += 1
 
     def collide_with_obstacles(self, dx=0, dy=0):
          return any(obstacle.x == self.x + dx and obstacle.y == self.y + dy for obstacle in self.game.obstacles)
@@ -564,6 +592,56 @@ class Player(pygame.sprite.Sprite):
         self.identity = None
         self.set_identity()
 
+class Archetype():
+    def __init__(self): 
+        self.num_of_objects_placed = 0
+        self.num_of_objects_boiled = 0
+        self.num_of_soup_delivered = 0
+        self.num_of_soup_plated = 0
+        self.distance_moved = 0
+
+    def get_archetype(self):
+        return [self.num_of_objects_placed, self.num_of_objects_boiled, self.num_of_soup_delivered, self.num_of_soup_plated, self.distance_moved]
+
+    @property
+    def num_of_objects_placed(self):
+        return self._num_of_objects_placed
+
+    @num_of_objects_placed.setter
+    def num_of_objects_placed(self, value):
+        self._num_of_objects_placed = value
+
+    @property
+    def num_of_objects_boiled(self):
+        return self._num_of_objects_boiled
+
+    @num_of_objects_boiled.setter
+    def num_of_objects_boiled(self, value):
+        self._num_of_objects_boiled = value
+
+    @property
+    def num_of_soup_delivered(self):
+        return self._num_of_soup_delivered
+
+    @num_of_soup_delivered.setter
+    def num_of_soup_delivered(self, value):
+        self._num_of_soup_delivered = value
+
+    @property
+    def num_of_soup_plated(self):
+        return self._num_of_soup_plated
+
+    @num_of_soup_plated.setter
+    def num_of_soup_plated(self, value):
+        self._num_of_soup_plated = value
+
+    @property
+    def distance_moved(self):
+        return self._distance_moved
+
+    @distance_moved.setter
+    def distance_moved(self, value):
+        self._distance_moved = value
 
 
 # Tile classes
@@ -603,6 +681,7 @@ class Table(Interactable):
                 player.held.player = self
                 self.object.initialise_in_dictionary()
                 player.held = None
+                player.archetype.num_of_objects_placed += 1
                 if isinstance(self.object, Food):
                     self.image = TILE_FOOD
                     self.id = 11
@@ -660,6 +739,7 @@ class Pot(Interactable):
             player.held.remove_from_dictionary()
             player.held = None
             player.add_score(1) 
+            player.archetype.num_of_objects_boiled += 1
             if (len(self.objects) == 3):
                 self.is_cooked = True
         if (self.is_cooked):
@@ -672,6 +752,7 @@ class Pot(Interactable):
 
                 player.held = Soup(self.game, player, object_id_list)
                 player.add_score(1) 
+                player.archetype.num_of_soup_plated += 1
                 self.objects.clear()
 
     def cook(self):
@@ -711,6 +792,7 @@ class Counter(Interactable):
 
             player.held.remove_from_dictionary()
             player.held = None
+            player.archetype.num_of_soup_delivered += 1
             print(self.game.agentOne.score)
             print(self.game.agentTwo.score)
 

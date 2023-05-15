@@ -3,20 +3,21 @@ import numpy as np
 import gym
 import overcookedenv
 
-from stable_baselines3 import PPO
-from stable_baselines3.ppo import MlpPolicy
-from stable_baselines3.ppo import MultiInputPolicy
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
-from stable_baselines3.common.monitor import Monitor
+from stable_baselines.ppo1 import PPO1
+from stable_baselines.common.policies import MlpPolicy
+from stable_baselines.common.policies import MultiInputPolicy
+from stable_baselines import logger
+from stable_baselines.common.callbacks import EvalCallback
 
 from shutil import copyfile # keep track of generations
+
 
 # Settings
 SEED = 17
 NUM_TIMESTEPS = int(1e9)
-EVAL_FREQ = int(1e4)
-EVAL_EPISODES = int(5)
-BEST_THRESHOLD = 0 # must achieve a mean score above this to replace prev best self
+EVAL_FREQ = int(1e5)
+EVAL_EPISODES = int(1e2)
+BEST_THRESHOLD = 0.5 # must achieve a mean score above this to replace prev best self
 TENSORBOARD_LOG ="./overcooked_tensorboard/"
 RENDER_MODE = False # set this to false if you plan on running for full 1000 trials.
 
@@ -73,7 +74,6 @@ class SelfPlayCallback(EvalCallback):
             self.best_mean_reward = BEST_THRESHOLD
         return result
 
-
 def rollout(env, policy):
     """ play one agent vs the other in modified gym-style loop. """
     obs = env.reset()
@@ -100,9 +100,9 @@ def train():
     env.seed(SEED)
 
 
-    model = PPO(MultiInputPolicy, env, n_steps=2500, batch_size=50, n_epochs=10, learning_rate=2.5e-4, gamma=0.99,
-                gae_lambda=0.95, clip_range=0.2, clip_range_vf=None, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5,
-                seed=0, verbose=1, tensorboard_log = TENSORBOARD_LOG)
+    model = PPO1(MultiInputPolicy, env, timesteps_per_actorbatch=2500, clip_param=0.2, entcoeff=0.0, optim_epochs=10,
+                   optim_stepsize=3e-4, optim_batchsize=64, gamma=0.99, lam=0.95, schedule='linear', verbose=2, tensorboard_log = TENSORBOARD_LOG)
+
 
     eval_env = Monitor(OvercookedSelfPlayEnv, LOGDIR)
 
